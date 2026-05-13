@@ -1,0 +1,26 @@
+﻿project:
+  name: yolo11-analysis-app
+  output_dir: ./outputs
+
+inputs:
+  weights_path: ./weights/best.pt
+  data_yaml: ./datasets/my_dataset/data.yaml
+  image_dir: ./datasets/my_dataset/images/val
+  label_dir: ./datasets/my_dataset/labels/val
+  eval_image_dir: ./datasets/my_dataset/images/test
+  eval_label_dir: ./datasets/my_dataset/labels/test
+
+inference:
+  imgsz: 1024
+  conf: 0.25
+  iou: 0.70
+  device: cpu
+  max_det: 1200
+
+matching:
+  match_iou: 0.50
+
+size_rule:
+  metric: sqrt_area
+  small_threshold: 32
+  medium_threshold: 96

@@ -1,0 +1,44 @@
+{
+  "source_root": "E:\\cy\\DIOR",
+  "target_root": "E:\\cy\\yolo_dota_project\\datasets\\DIOR",
+  "image_mode": "hardlink",
+  "classes": [
+    "airplane",
+    "airport",
+    "baseballfield",
+    "basketballcourt",
+    "bridge",
+    "chimney",
+    "dam",
+    "Expressway-Service-area",
+    "Expressway-toll-station",
+    "golffield",
+    "groundtrackfield",
+    "harbor",
+    "overpass",
+    "ship",
+    "stadium",
+    "storagetank",
+    "tenniscourt",
+    "trainstation",
+    "vehicle",
+    "windmill"
+  ],
+  "splits": {
+    "train": {
+      "images": 5862,
+      "objects": 32634,
+      "empty_labels": 0
+    },
+    "val": {
+      "images": 5863,
+      "objects": 35439,
+      "empty_labels": 0
+    },
+    "test": {
+      "images": 11738,
+      "objects": 124445,
+      "empty_labels": 0
+    }
+  }
+}
