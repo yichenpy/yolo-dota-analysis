@@ -91,6 +91,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-project", type=str, default=DEFAULTS["wandb_project"])
     parser.add_argument("--wandb-entity", type=str, default=DEFAULTS["wandb_entity"])
     parser.add_argument("--wandb-mode", type=str, default=DEFAULTS["wandb_mode"], choices=["online", "offline", "disabled"])
+    parser.add_argument("--use-nwd", action="store_true", help="Enable NWD loss term in RotatedBboxLoss. See docs/paper/nwd.md.")
+    parser.add_argument("--nwd-c", type=float, default=64.0, help="NWD normalization constant in pixels (default 64 for DOTA-split-lite).")
+    parser.add_argument("--nwd-weight", type=float, default=0.5, help="Weight alpha of NWD loss in alpha*L_NWD + (1-alpha)*L_ProbIoU.")
     return parser.parse_args()
 
 
@@ -243,6 +246,11 @@ def main() -> None:
     data_yaml = resolve_data_yaml(project_root, args.data)
     model, build_info = build_model(project_root, args)
 
+    if args.use_nwd:
+        from nwd_loss import enable_nwd_loss
+        enable_nwd_loss(nwd_c=args.nwd_c, nwd_weight=args.nwd_weight)
+        print(f"[nwd] enabled: C={args.nwd_c}, alpha={args.nwd_weight}")
+
     cfg_path = Path(build_info["cfg"]) if build_info.get("cfg") else None
     weight_path = Path(build_info["weights"]) if build_info.get("weights") else None
     model_source = Path(build_info["model_source"]) if build_info.get("model_source") else None
@@ -308,6 +316,9 @@ def main() -> None:
             "run_name": run_name,
             "requested_device": args.device,
             "resolved_device": resolved_device,
+            "use_nwd": bool(args.use_nwd),
+            "nwd_c": float(args.nwd_c) if args.use_nwd else None,
+            "nwd_weight": float(args.nwd_weight) if args.use_nwd else None,
             **build_info,
             **train_kwargs,
         },
