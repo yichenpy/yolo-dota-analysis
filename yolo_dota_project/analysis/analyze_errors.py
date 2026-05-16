@@ -142,6 +142,15 @@ def parse_args() -> argparse.Namespace:
         help="Optional limit for debugging on the server.",
     )
     parser.add_argument(
+        "--predictions-only",
+        action="store_true",
+        help=(
+            "Restrict evaluation to images that have at least one prediction entry. "
+            "Use this to compare partial prediction sets (e.g. SAHI sample) fairly: "
+            "otherwise val images without predictions inflate the miss rate."
+        ),
+    )
+    parser.add_argument(
         "--save-details",
         action="store_true",
         help="Save per-instance missed/false rows to CSV.",
@@ -1010,6 +1019,20 @@ def analyze(args: argparse.Namespace) -> None:
         show_progress=not args.no_progress,
     )
     prediction_map = load_predictions(args, image_paths, image_sizes)
+
+    if args.predictions_only:
+        before = len(image_paths)
+        image_paths = [p for p in image_paths if prediction_map.get(p)]
+        after = len(image_paths)
+        print(
+            f"[analyze_errors] --predictions-only: keeping {after}/{before} images "
+            f"that have at least one prediction file."
+        )
+        if not image_paths:
+            raise AnalysisConfigurationError(
+                "No images survived --predictions-only filter. "
+                "Check that --predictions points at the right directory and the prediction files match image stems."
+            )
 
     missed_by_class: Counter[str] = Counter()
     false_by_class: Counter[str] = Counter()

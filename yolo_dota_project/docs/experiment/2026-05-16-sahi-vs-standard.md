@@ -52,6 +52,11 @@ nms_iou: 0.5
 
 ## 3. 完整执行步骤（服务器）
 
+> **重要更新**：之前的"200 张样本 + analyze_errors"得到了 miss_rate=93% 的伪指标。
+> 根因：analyze_errors 默认遍历全部 3503 val 图，未覆盖的 3303 张图的 GT 全算 missed。
+> 修复：新增 `--predictions-only` flag + `standard_inference.py` 对照脚本，做到 apples-to-apples 对比。
+> 详情见 [`docs/code/fair-comparison.md`](../code/fair-comparison.md)。
+
 ### 3.1 拉取最新代码到服务器
 
 ```bash
@@ -59,14 +64,18 @@ cd /root/cy
 git pull origin main
 ```
 
-确认 `yolo_dota_project/analysis/sahi_inference.py` 存在。
+确认这三个文件最新：
 
-### 3.2 推荐：先跑 200 张样本探路（约 30 分钟）
+- `yolo_dota_project/analysis/sahi_inference.py`（带 rotated_nms 跨版本兼容）
+- `yolo_dota_project/analysis/standard_inference.py`（**新**）
+- `yolo_dota_project/analysis/analyze_errors.py`（带 `--predictions-only`）
+
+### 3.2 推荐：200 张样本 SAHI vs Standard 公平对比（约 40 分钟）
 
 ```bash
 cd /root/cy/yolo_dota_project
 
-# Baseline SAHI 推理（200 张）
+# 步骤 1：SAHI 推理 200 张（约 30 min）
 python analysis/sahi_inference.py \
   --weights runs/obb/test/yolo11s_baseline_20ep/weights/best.pt \
   --dataset datasets/DOTAv1.5-lite/data.yaml \
@@ -74,22 +83,40 @@ python analysis/sahi_inference.py \
   --slice-size 512 --overlap 0.2 --device 0 \
   --max-images 200
 
-# 评估这 200 张
-python analysis/analyze_errors.py \
+# 步骤 2：Standard 推理同样 200 张（约 1 min，自动按 SAHI 输出目录过滤）
+python analysis/standard_inference.py \
+  --weights runs/obb/test/yolo11s_baseline_20ep/weights/best.pt \
   --dataset datasets/DOTAv1.5-lite/data.yaml \
-  --split val \
+  --output-dir analysis/outputs/sahi/baseline_sample200_std \
+  --from-sahi-dir analysis/outputs/sahi/baseline_sample200 \
+  --device 0
+
+# 步骤 3：公平评估 SAHI（带 --predictions-only）
+python analysis/analyze_errors.py \
+  --dataset datasets/DOTAv1.5-lite/data.yaml --split val \
   --predictions analysis/outputs/sahi/baseline_sample200 \
-  --prediction-format txt \
-  --prediction-layout class_xyxyxyxy_conf \
-  --output-dir analysis/outputs/errors/baseline_sahi_sample200
+  --prediction-format txt --prediction-layout class_xyxyxyxy_conf \
+  --predictions-only \
+  --output-dir analysis/outputs/errors/baseline_sahi_200_fair \
+  --skip-official-val
+
+# 步骤 4：公平评估 Standard（同 200 张）
+python analysis/analyze_errors.py \
+  --dataset datasets/DOTAv1.5-lite/data.yaml --split val \
+  --predictions analysis/outputs/sahi/baseline_sample200_std \
+  --prediction-format txt --prediction-layout class_xyxyxyxy_conf \
+  --predictions-only \
+  --output-dir analysis/outputs/errors/baseline_std_200_fair \
+  --skip-official-val
 ```
 
-看 `analysis/outputs/errors/baseline_sahi_sample200/summary.json` 的 mAP@0.5。
+把两个 `summary.json` 都贴给我即可。
 
-**决策点**：
+**决策点**（看 miss_rate 和 missed_by_class.small_vehicle 的差异）：
 
-- 如果 mAP 比之前 baseline 的 0.741 高 ≥ 2 个点 → 值得花 9 小时跑全集
-- 如果持平或下降 → SAHI 在本数据集无效（DOTAv1.5-lite 已经预切片，可能价值有限），换路线
+- SAHI miss_rate 比 Standard 低 ≥ 5 个点 → SAHI 有效，值得跑全集
+- SAHI miss_rate 持平或更高 → SAHI 在 DOTAv1.5-lite 上无效，转 P2 头路线
+- SAHI 整体好但 false 暴增 → 调高 conf_thres 或调 NMS 阈值再试
 
 ### 3.3 完整推理（如果 3.2 看起来有戏，约 9 小时/run）
 
