@@ -44,7 +44,7 @@
 |------|------|------|
 | 主框架 | Ultralytics 8.3+ | 复用 model.predict() / nms_rotated |
 | 不依赖 sahi 库 | 自实现 | OBB 支持稳定性 + 代码透明 |
-| OBB NMS | ultralytics.utils.ops.nms_rotated | 基于 probiou，与训练对齐 |
+| OBB NMS | 跨版本兼容包装 `rotated_nms`（三重 fallback） | 见下文 6.4，自动适配 ultralytics 8.3 / 8.4+ |
 | Per-class NMS | 坐标 offset trick | 单次 NMS 调用处理所有类，比循环每类一次快 |
 
 ## 3. 文件清单
@@ -182,6 +182,7 @@ python analysis/analyze_errors.py \
 | 显存 OOM | `--slice-size` 太大 + per-image batch | CUDA OOM | 减小 `--slice-size` 或确认 `--device 0` 可用 |
 | 坐标超出原图边界 | NMS 之前的预测在 patch 边缘 | analyze_errors 报警 | 已自动 clip 在写文件前；如仍有警告可加额外 clamp |
 | `prediction-layout` 不匹配 | 默认就是 class_xyxyxyxy_conf | analyze_errors 解析错 | 确认 `analyze_errors --prediction-layout class_xyxyxyxy_conf` |
+| `ImportError: cannot import name 'nms_rotated' from 'ultralytics.utils.ops'` | ultralytics ≥ 8.4 移除了此符号 | 旧脚本崩溃 | 已用 `rotated_nms` 包装解决（见 6.4） |
 
 ### 6.2 调试步骤
 
@@ -198,6 +199,26 @@ python analysis/analyze_errors.py \
 | slice=512, overlap=0.2, no-standard | ~5 s | ~4.9 h |
 | slice=640, overlap=0.2, +standard | ~6 s | ~5.8 h |
 | slice=384, overlap=0.3, +standard | ~14 s | ~13.6 h |
+
+### 6.4 跨 ultralytics 版本的 OBB NMS 兼容
+
+不同 ultralytics 版本 OBB NMS 入口不同：
+
+| 版本 | 调用方式 |
+|------|----------|
+| 8.3.x（如 8.3.93） | `from ultralytics.utils.ops import nms_rotated` |
+| 8.4.x（如 8.4.46） | `nms_rotated` 已移除；改用 `TorchNMS.fast_nms(..., iou_func=batch_probiou)`（在 `ultralytics.utils.nms`） |
+| 兜底（任意版本） | 用 `batch_probiou` 自实现 greedy NMS |
+
+`sahi_inference.py` 内部的 `rotated_nms()` 包装函数自动按上述顺序尝试，使用者**无需关心 ultralytics 版本**。
+
+验证方式（强制走 fallback）：
+
+```powershell
+& "E:\miniconda3\envs\cuda\python.exe" tests\test_rotated_nms_compat.py
+```
+
+预期输出 `Path 1 set == Path 3 set`（如果在 8.4+ 上还会多一行 `Path 1 set == Path 2 set`）。
 
 ## 7. 与现有 analyze_errors 的协同
 

@@ -25,10 +25,48 @@ import torch
 import yaml
 from PIL import Image
 from ultralytics import YOLO
-from ultralytics.utils.ops import nms_rotated
 
 
 IMG_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+
+
+def rotated_nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float) -> torch.Tensor:
+    """Cross-version OBB NMS.
+
+    Tries import paths in order: 8.3.x direct ``nms_rotated``, 8.4.x ``TorchNMS.fast_nms``
+    with ``batch_probiou``, and finally a self-contained greedy NMS using ``batch_probiou``.
+    Returns indices into the input that survive suppression, sorted by descending score.
+    """
+    if boxes.numel() == 0:
+        return torch.empty(0, dtype=torch.long, device=boxes.device)
+
+    try:
+        from ultralytics.utils.ops import nms_rotated as _nms_rotated
+        return _nms_rotated(boxes, scores, threshold=iou_threshold)
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from ultralytics.utils.nms import TorchNMS
+        from ultralytics.utils.metrics import batch_probiou
+        return TorchNMS.fast_nms(boxes, scores, iou_threshold, iou_func=batch_probiou)
+    except (ImportError, AttributeError):
+        pass
+
+    from ultralytics.utils.metrics import batch_probiou
+    order = scores.argsort(descending=True)
+    keep: list[int] = []
+    remaining = order.tolist()
+    while remaining:
+        i = remaining[0]
+        keep.append(i)
+        if len(remaining) == 1:
+            break
+        rest = torch.as_tensor(remaining[1:], dtype=torch.long, device=boxes.device)
+        ious = batch_probiou(boxes[i:i + 1], boxes[rest]).squeeze(0)
+        survive = (ious <= iou_threshold).nonzero(as_tuple=True)[0]
+        remaining = rest[survive].tolist()
+    return torch.as_tensor(keep, dtype=torch.long, device=boxes.device)
 
 
 def parse_args() -> argparse.Namespace:
@@ -180,7 +218,7 @@ def run_inference_on_image(
         offset_boxes = boxes.clone()
         offset_boxes[:, 0] += offset
         offset_boxes[:, 1] += offset
-        keep = nms_rotated(offset_boxes, scores, threshold=nms_iou)
+        keep = rotated_nms(offset_boxes, scores, iou_threshold=nms_iou)
         boxes = boxes[keep]
         scores = scores[keep]
         classes = classes[keep]
