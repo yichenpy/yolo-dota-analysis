@@ -56,7 +56,7 @@ pip install -r requirements.txt
 
 ```bash
 python train.py \
-  --data datasets/DOTA-split-lite/data.yaml \
+  --data datasets/DOTAv1.5-lite/data.yaml \
   --model yolo11s-obb.pt \
   --name yolo11s_obb_baseline_nwd \
   --use-nwd \
@@ -68,7 +68,7 @@ python train.py \
 
 ```bash
 python train.py \
-  --data datasets/DOTA-split-lite/data.yaml \
+  --data datasets/DOTAv1.5-lite/data.yaml \
   --cfg models/yolo11s-obb-p2.yaml \
   --weights yolo11s-obb.pt \
   --name yolo11s_obb_p2_nwd \
@@ -109,7 +109,7 @@ print(f"NWD = {nwd.item():.4f}")  # ~0.95
 | 数据集 / Split | 建议 C 值 | 依据 |
 |----------------|-----------|------|
 | AI-TOD | 12.8 | 论文原始值（平均目标 12.8 px） |
-| DOTA-split-lite（1024 切片） | **64** | sqrt(area) 中位数偏小 |
+| DOTAv1.5-lite（1024 切片） | **64** | sqrt(area) 中位数偏小 |
 | DOTAv1.5-lite | 64 | 同上 |
 | 未切片原图 DOTA | 100~120 | 目标尺寸跨度大 |
 | DIOR（水平框） | 50 | 平均目标约 50 px |

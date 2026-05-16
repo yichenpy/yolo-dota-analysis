@@ -4,7 +4,7 @@
 
 ## 1. 实验目的
 
-短期（20 epoch）验证 NWD 损失（C=64, α=0.5）是否能在 DOTA-split-lite 上带来：
+短期（20 epoch）验证 NWD 损失（C=64, α=0.5）是否能在 DOTAv1.5-lite 上带来：
 
 - 整体 mAP@0.5 / mAP@0.5:0.95 提升
 - **特别关注**：`small-vehicle` 等小目标类 AP 是否提升（NWD 的设计目标）
@@ -33,7 +33,7 @@
 
 | 数据集 | data.yaml | 验证集图像数 | 验证集实例数 | 类别数 |
 |--------|-----------|--------------|--------------|--------|
-| DOTA-split-lite | `datasets/DOTA-split-lite/data.yaml` | 3503 | 123,897 | 16 |
+| DOTAv1.5-lite | `datasets/DOTAv1.5-lite/data.yaml` | 3503 | 123,897 | 16 |
 
 ### 2.4 训练超参（两次完全一致除 NWD 外）
 
@@ -137,7 +137,7 @@ nwd_weight: 0.5
 
 加权后总损失（0.122）和**纯 ProbIoU（0.125）几乎一样**。等价于把 ProbIoU 替换成了一个数值接近的损失，自然不带来增益。
 
-**结论**：**NWD 在 size-matched C 下不是"加强小目标信号"，而是"冗余地复制小目标信号"**。这与论文的暗示相反——论文在 AI-TOD（全微小目标）上有效，是因为 IoU 在 6×6 上极不稳定，NWD 提供了一个**不同的、更平滑的**信号。在 DOTA-split-lite，ProbIoU 在 16 px 上已经稳定且严苛，NWD 无新增价值。
+**结论**：**NWD 在 size-matched C 下不是"加强小目标信号"，而是"冗余地复制小目标信号"**。这与论文的暗示相反——论文在 AI-TOD（全微小目标）上有效，是因为 IoU 在 6×6 上极不稳定，NWD 提供了一个**不同的、更平滑的**信号。在 DOTAv1.5-lite，ProbIoU 在 16 px 上已经稳定且严苛，NWD 无新增价值。
 
 #### Bad Case 1b：plane 反而提升 +1.9（颠覆原假设）
 
@@ -171,24 +171,6 @@ nwd_weight: 0.5
 - 短期：α 降到 0.3，让 ProbIoU 主导桥的回归
 - 中期：class-conditional NWD，bridge / harbor 这类长条目标关闭 NWD
 - 长期：在 NWD 上引入宽高比修正项
-
-#### Bad Case 2：bridge 退 2.9 mAP50
-
-**现象**：790 实例的桥类，NWD 让 mAP50 从 0.668 降到 0.639。
-
-**根因**：Wasserstein 距离对**极端宽高比**的几何敏感性不足。
-
-- 桥的 OBB 典型形状是 w=200, h=10
-- Σ = diag(200²/12, 10²/12) = diag(3333, 8.3)
-- trace 被长边主导（3333 vs 8.3），短边变化被稀释
-- 短边定位错误的损失贡献严重不足
-- ProbIoU 用 Bhattacharyya 距离涉及 det(Σ)，对极端长宽比敏感度更高，原本能正确惩罚桥的短边误差
-
-**改进方向**：
-
-- 短期：降低 NWD 权重 α（如 0.3）让 ProbIoU 主导
-- 长期：在 NWD 项中引入宽高比修正（类似 CIoU 对 IoU 的修正）
-- 或者：bridge 类排除 NWD（class-conditional NWD）
 
 #### Bad Case 3：所有"持平"类（−1 ~ +1）
 
@@ -236,7 +218,7 @@ nwd_weight: 0.5
 ```powershell
 cd E:\cy\yolo_dota_project
 & "E:\miniconda3\envs\cuda\python.exe" train.py `
-  --data datasets\DOTA-split-lite\data.yaml `
+  --data datasets\DOTAv1.5-lite\data.yaml `
   --model yolo11s-obb.pt `
   --name yolo11s_baseline_20ep `
   --epochs 20 --batch 8
@@ -246,7 +228,7 @@ cd E:\cy\yolo_dota_project
 
 ```powershell
 & "E:\miniconda3\envs\cuda\python.exe" train.py `
-  --data datasets\DOTA-split-lite\data.yaml `
+  --data datasets\DOTAv1.5-lite\data.yaml `
   --model yolo11s-obb.pt `
   --name yolo11s_nwd_20ep `
   --epochs 20 --batch 8 `

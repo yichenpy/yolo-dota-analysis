@@ -96,14 +96,14 @@ PASSED 9/9 tests
 
 ### 4.3 已知限制（待训练实验验证）
 
-1. **C = 64 是否适合 DOTA-split-lite 尚未确认**：目前只是基于 sqrt(area) 中位数的估计，需要先跑 `analyze_object_sizes.py` 取得精确分布
+1. **C = 64 是否适合 DOTAv1.5-lite 尚未确认**：目前只是基于 sqrt(area) 中位数的估计，需要先跑 `analyze_object_sizes.py` 取得精确分布
 2. **nwd_weight = 0.5 是否最优未知**：论文经验值，但 DOTA 大目标比例不低，可能 0.3 更合适
 3. **AMP 混合精度下数值稳定性未验证**：测试均在 fp32 下进行
 4. **DDP 多卡训练下 patch 传播未验证**：当前测试为单进程
 
 ### 4.4 下一步计划
 
-- [ ] 在 DOTA-split-lite 上跑 1-epoch baseline 与 NWD（C=64, α=0.5）的对比训练，验证 loss 曲线正常收敛
+- [ ] 在 DOTAv1.5-lite 上跑 1-epoch baseline 与 NWD（C=64, α=0.5）的对比训练，验证 loss 曲线正常收敛
 - [ ] 跑完整 100 epoch 训练 baseline、NWD-on，对比 mAP@0.5 / mAP@0.5:0.95 / 各类 AP
 - [ ] 若 NWD 有提升，做小规模超参搜索：C ∈ {32, 64, 100}，α ∈ {0.3, 0.5, 0.7}
 - [ ] 与 P2 头组合实验：baseline P2 vs P2 + NWD

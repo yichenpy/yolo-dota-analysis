@@ -79,7 +79,7 @@ pip install sahi
 
 ```powershell
 & "E:\miniconda3\envs\cuda\python.exe" train.py `
-  --data datasets\DOTA-split-lite\data.yaml `
+  --data datasets\DOTAv1.5-lite\data.yaml `
   --cfg models\yolo11s-obb-p2.yaml `
   --weights yolo11s-obb.pt `
   --name yolo11s_p2_nwd_20ep `
@@ -99,7 +99,7 @@ NWD 占比降低，减少 bridge 退化，保留大目标增益：
 
 ```powershell
 & "E:\miniconda3\envs\cuda\python.exe" train.py `
-  --data datasets\DOTA-split-lite\data.yaml `
+  --data datasets\DOTAv1.5-lite\data.yaml `
   --model yolo11s-obb.pt `
   --name yolo11s_nwd_a03_20ep `
   --epochs 20 --batch 8 `

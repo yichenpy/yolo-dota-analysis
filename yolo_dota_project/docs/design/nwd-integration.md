@@ -126,7 +126,7 @@ loss_iou_combined = nwd_weight * loss_nwd + (1 - nwd_weight) * loss_probiou
 
 ### 4.4 归一化常数 C 的选择
 
-DOTA-split-lite 数据集中目标 sqrt(area) 经验分布：
+DOTAv1.5-lite 数据集中目标 sqrt(area) 经验分布：
 - 5th percentile: ~12 px
 - 中位数: ~32 px
 - 95th percentile: ~120 px
@@ -149,7 +149,7 @@ DOTA-split-lite 数据集中目标 sqrt(area) 经验分布：
 
 ```bash
 python train.py \
-  --data datasets/DOTA-split-lite/data.yaml \
+  --data datasets/DOTAv1.5-lite/data.yaml \
   --cfg models/yolo11s-obb-p2.yaml \
   --weights yolo11s-obb.pt \
   --use-nwd \
