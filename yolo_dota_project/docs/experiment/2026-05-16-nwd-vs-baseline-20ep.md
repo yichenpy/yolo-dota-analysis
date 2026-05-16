@@ -55,7 +55,7 @@ seed: 0
 
 ```yaml
 use_nwd: true
-nwd_c: 64.0
+nwd_c: 16.0      # 来自 analyze_object_sizes.py 的 sqrt(area) 中位数
 nwd_weight: 0.5
 ```
 
@@ -119,19 +119,58 @@ nwd_weight: 0.5
 
 ### 4.2 不符合预期 (Bad Case 分析)
 
-#### Bad Case 1：small-vehicle 完全不动
+#### Bad Case 1：small-vehicle 完全不动（核心反预期）
 
-**现象**：73,504 实例的大类，NWD 提升为 0。
+**现象**：73,504 实例的小目标主力类，NWD（C=16）提升为 0。
 
-**根因**：`C=64` 对小车太大。
+**第一版根因（错误）**：C 太大不匹配小车尺寸。
 
-- 小车 sqrt(area) 估计在 12-20 px 范围
-- W₂ 距离对小车的"远距离"是 5-10 px，NWD = exp(-10/64) ≈ 0.86，已经很高
-- `1 - NWD ≈ 0.14`，远小于 ProbIoU 对小车的损失（通常 0.3-0.5）
-- 加权 `0.5 * 0.14 + 0.5 * 0.4 = 0.27` ≈ 0.5 * 原 ProbIoU 损失
-- 实际效果：NWD 项在小车上**贡献被稀释**，等于变相降低了小车的回归权重
+**修正根因（正确）**：C 已经匹配（来自数据集 sqrt(area) 中位数），但 **NWD 和 ProbIoU 在小目标上提供了高度冗余的信号**。
 
-**改进方向**：降低 C 到 20-30 范围，让 NWD 在小车上真正进入"敏感区间"。
+具体测算（16 px 小车，2 px 中心偏移）：
+
+| 损失项 | 计算 | 数值 |
+|--------|------|------|
+| ProbIoU 项 `1 − probiou` | 16px 框 2px 偏移 → IoU ≈ 0.875 | ~0.125 |
+| NWD 项 `1 − NWD` | `1 − exp(−2/16)` | ~0.118 |
+| 加权 (α=0.5) | 0.5 × 0.125 + 0.5 × 0.118 | **0.122** |
+
+加权后总损失（0.122）和**纯 ProbIoU（0.125）几乎一样**。等价于把 ProbIoU 替换成了一个数值接近的损失，自然不带来增益。
+
+**结论**：**NWD 在 size-matched C 下不是"加强小目标信号"，而是"冗余地复制小目标信号"**。这与论文的暗示相反——论文在 AI-TOD（全微小目标）上有效，是因为 IoU 在 6×6 上极不稳定，NWD 提供了一个**不同的、更平滑的**信号。在 DOTA-split-lite，ProbIoU 在 16 px 上已经稳定且严苛，NWD 无新增价值。
+
+#### Bad Case 1b：plane 反而提升 +1.9（颠覆原假设）
+
+按"NWD 是小目标损失"理解，飞机（中大目标）不应该是受益者。但实际 plane +1.9 mAP50 是统计可信的提升。
+
+测算（100 px 飞机，2 px 偏移）：
+
+| 损失项 | 数值 |
+|--------|------|
+| ProbIoU 项（大目标小偏移） | ~0.020 |
+| NWD 项 `1 − exp(−2/16)` | ~0.118 |
+| 加权 | **0.069**（比原 ProbIoU 高 ~3.5 倍） |
+
+**关键洞察**：NWD 在 C=16 下对位置偏移是 **size-invariant**（2 px 偏移无论框多大，NWD 都给 ~0.118）。而 ProbIoU 对大目标小偏移近乎不敏感（0.020）。所以 **NWD 实际作用是把大目标的位置惩罚抬到了和小目标一个量级**，这是它在 plane、helicopter、harbor 上有增益的真正原因。
+
+**修正后的 NWD 定位**：
+
+> NWD（在 size-matched C 下）不是"小目标损失"，而是 **"size-invariant 的位置正则项"**——它强化的是 ProbIoU 在大目标上不敏感的位置误差，而非小目标。
+
+#### Bad Case 2：bridge 退 2.9 mAP50（根因不变）
+
+桥的 W=200, h=10 极端长条形：
+
+- 长边 trace ≈ 3333，短边 trace ≈ 8，被长边完全主导
+- 短边定位误差在 W₂² 中几乎不可见
+- ProbIoU 用 Bhattacharyya 涉及 det(Σ)，对短边敏感
+- α=0.5 加权后短边监督被严重稀释 → 桥的窄方向回归失准
+
+**改进方向（保持有效）**：
+
+- 短期：α 降到 0.3，让 ProbIoU 主导桥的回归
+- 中期：class-conditional NWD，bridge / harbor 这类长条目标关闭 NWD
+- 长期：在 NWD 上引入宽高比修正项
 
 #### Bad Case 2：bridge 退 2.9 mAP50
 
@@ -159,24 +198,36 @@ nwd_weight: 0.5
 - 20 epoch 还在收敛中，差异不显著
 - α=0.5 折中导致两个损失互相稀释
 
-### 4.3 关键技术洞察
+### 4.3 关键技术洞察（修正版）
 
-1. **C 是数据集敏感的核心超参**：不是越小越好或越大越好，而是要匹配目标尺寸分布的中位数。C=64 估计偏向了中等目标（plane, harbor），错过了 small-vehicle。
+1. **NWD 的实际定位是 size-invariant 位置正则，不是小目标损失**。当 C 匹配数据集尺寸时：
+   - 小目标上 NWD 与 ProbIoU 量级接近，是冗余信号
+   - 大目标上 NWD 把 ProbIoU 已经"放过"的小偏移重新纳入惩罚
+   - 因此 NWD 实际是"补救大目标的 IoU 不敏感性"，与论文小目标叙事相反
 
-2. **NWD 不是"小目标专用"的银弹**：论文的"+9 mAP"成绩在 AI-TOD 上是因为**整个数据集都是微小目标**，C=12.8 对所有目标都有效。在 DOTA 这种**尺度跨度大**的数据集，固定单一 C 永远是妥协。
+2. **论文 +9 mAP on AI-TOD 不可在 DOTA 复制**：AI-TOD 全是 < 16 px 的极小目标，IoU 完全失效，NWD 是唯一能提供位置梯度的工具。DOTA 的 ProbIoU 在中位 16 px 上已经稳定。
 
-3. **Wasserstein 对长条目标先天不友好**：bridge 的回退印证了这一点，应该作为后续设计 class-conditional 损失的依据。
+3. **Wasserstein 对长条目标先天不友好**：trace 被长边主导，短边定位损失被稀释，bridge 必然退化。
 
-### 4.4 下一步改进计划
+4. **C 不是单调可调的小目标按钮**：再降 C（如 C=8）会让所有目标的 NWD 项趋于饱和（exp 衰减），不解决问题。
 
-按 ROI 排序：
+### 4.4 下一步改进计划（颠覆原计划）
 
-- [ ] **优先：C=24 重训**，验证是否能救 small-vehicle
-- [ ] 跑 `analyze_object_sizes.py` 取得精确尺寸分布，按各类中位数评估 C 的合理性
-- [ ] 若 C=24 仍不行：α 降到 0.3，看是否能止住 bridge 的退化
-- [ ] 若 C=24 仍不行：考虑 class-conditional NWD（仅 small-vehicle、ship 启用）
-- [ ] 备选方案：完全换 KFIoU，看 OBB 专用损失是否更适合
-- [ ] 与 P2 头组合实验
+**放弃的方向**（基于错误诊断）：
+
+- ~~C=24 重训~~：C 已经匹配，再降无意义
+- ~~进一步降 C 救 small-vehicle~~：math 上不成立
+
+**新的优先级**：
+
+| 优先级 | 方向 | 理由 |
+|--------|------|------|
+| 1 | **SAHI 切片推理** | 零训练成本，对 aerial small object 常规 +3-8 mAP，立刻验证 |
+| 2 | **P2 头 + 现 NWD 组合训练** | 用架构层面攻击 small-vehicle，NWD 顺便保留对 plane 的增益 |
+| 3 | **Small-Object Copy-Paste 增强** | 数据层面增加 small-vehicle 频率，正交于损失改动 |
+| 4 | **α=0.3 重训** | 减少 bridge 退化，保留大目标增益，低成本验证 |
+| 5 | **class-conditional NWD（仅大目标启用）** | 顺应实际作用机理，但实现成本高 |
+| 6 | **KFIoU 替代 ProbIoU** | OBB 专用，可能对桥这种长条目标更友好 |
 
 ## 5. 复现说明
 
@@ -199,8 +250,10 @@ cd E:\cy\yolo_dota_project
   --model yolo11s-obb.pt `
   --name yolo11s_nwd_20ep `
   --epochs 20 --batch 8 `
-  --use-nwd --nwd-c 64 --nwd-weight 0.5
+  --use-nwd --nwd-c 16 --nwd-weight 0.5
 ```
+
+> C=16 来自先期跑的 `analyze_object_sizes.py`，取 sqrt(area) 中位数。
 
 ### 5.3 权重保存
 
